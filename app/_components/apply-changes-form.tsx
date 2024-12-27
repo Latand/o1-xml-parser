@@ -1,69 +1,67 @@
 "use client";
-import { applyChangesAction } from "@/actions/apply-changes-actions";
-import { useEffect, useState } from "react";
+
+import { useState, useRef } from "react";
+import { Button } from "@/components/ui/button";
+import { FolderOpen } from "lucide-react";
+import { DirectoryBrowser } from "@/app/browser/_components/directory-browser";
 
 export function ApplyChangesForm() {
-  const [xml, setXml] = useState<string>("");
-  const [projectDirectory, setProjectDirectory] = useState<string>("");
-  const [successMessage, setSuccessMessage] = useState<string>("");
-  const [errorMessage, setErrorMessage] = useState<string>("");
+  const [path, setPath] = useState<string>("");
+  const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
+  const directoryInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    let timer: NodeJS.Timeout;
-    if (successMessage) {
-      timer = setTimeout(() => {
-        setSuccessMessage("");
-      }, 2000);
-    }
-    return () => {
-      if (timer) clearTimeout(timer);
-    };
-  }, [successMessage]);
+  const handleDirectorySelect = () => {
+    directoryInputRef.current?.click();
+  };
 
-  const handleApply = async () => {
-    setErrorMessage("");
-    if (!xml.trim()) {
-      setErrorMessage("Please paste XML before applying changes.");
-      return;
-    }
-    try {
-      await applyChangesAction(xml, projectDirectory.trim());
-      setXml("");
-      setSuccessMessage("Changes applied successfully");
-    } catch (error: any) {
-      setErrorMessage("An error occurred while applying changes.");
+  const handleDirectoryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const directory = e.target.files?.[0];
+    if (directory) {
+      setPath(directory.path);
     }
   };
 
+  const handleApplyChanges = async () => {
+    if (selectedFiles.length === 0) return;
+    // Add your apply changes logic here
+  };
+
   return (
-    <div className="max-w-xl w-full mx-auto p-4 flex flex-col gap-4">
-      {errorMessage && <div className="text-red-400">{errorMessage}</div>}
-      {successMessage && <div className="text-green-400">{successMessage}</div>}
-      <div className="flex flex-col">
-        <label className="mb-2 font-bold">Project Directory:</label>
+    <div className="container mx-auto py-8 space-y-4">
+      <div className="flex gap-4 items-center">
         <input
-          className="border bg-secondary text-secondary-foreground p-2 w-full rounded-md"
-          type="text"
-          value={projectDirectory}
-          onChange={(e) => setProjectDirectory(e.target.value)}
-          placeholder="e.g. /Users/myusername/projects/o1-xml-parser"
+          type="file"
+          ref={directoryInputRef}
+          onChange={handleDirectoryChange}
+          webkitdirectory=""
+          directory=""
+          className="hidden"
         />
+        <Button onClick={handleDirectorySelect} className="flex gap-2">
+          <FolderOpen className="w-4 h-4" />
+          Select Directory
+        </Button>
+        {path && (
+          <span className="text-sm text-muted-foreground">
+            Selected: {path}
+          </span>
+        )}
       </div>
-      <div className="flex flex-col">
-        <label className="mb-2 font-bold">Paste XML here:</label>
-        <textarea
-          className="border bg-secondary text-secondary-foreground p-2 h-64 w-full rounded-md"
-          value={xml}
-          onChange={(e) => setXml(e.target.value)}
-          placeholder="Paste the <code_changes>...</code_changes> XML here"
-        />
+
+      <DirectoryBrowser
+        path={path}
+        selectedFiles={selectedFiles}
+        onSelectFiles={setSelectedFiles}
+      />
+
+      <div className="flex justify-end">
+        <Button
+          onClick={handleApplyChanges}
+          disabled={selectedFiles.length === 0}
+        >
+          Apply Changes
+        </Button>
       </div>
-      <button
-        className="bg-primary text-primary-foreground p-2 rounded-md hover:bg-primary/90 transition-colors"
-        onClick={handleApply}
-      >
-        Apply
-      </button>
     </div>
   );
 }

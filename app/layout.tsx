@@ -1,30 +1,30 @@
-import type { Metadata } from "next";
-import localFont from "next/font/local";
+"use client";
+
+import { MainNav } from "@/components/ui/nav";
+import { Toaster } from "sonner";
 import "./globals.css";
 
-const geistSans = localFont({
-  src: "./fonts/GeistVF.woff",
-  variable: "--font-geist-sans",
-  weight: "100 900"
-});
-const geistMono = localFont({
-  src: "./fonts/GeistMonoVF.woff",
-  variable: "--font-geist-mono",
-  weight: "100 900"
-});
-
-export const metadata: Metadata = {
-  title: "O1 XML Parser",
-  description: "A utility to parse XML from OpenAI's O1 model responses"
-};
-
-export default async function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
-    <html
-      lang="en"
-      className="dark"
-    >
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>{children}</body>
+    <html lang="en" className="dark" suppressHydrationWarning>
+      <head>
+        <title>O1 XML Parser</title>
+        <meta
+          name="description"
+          content="A utility to parse XML from OpenAI's O1 model responses"
+        />
+      </head>
+      <body className="min-h-screen bg-background text-foreground">
+        <div className="min-h-screen bg-gray-950">
+          <MainNav />
+          <main>{children}</main>
+          <Toaster theme="dark" position="top-right" />
+        </div>
+      </body>
     </html>
   );
 }
