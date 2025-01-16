@@ -11,6 +11,26 @@ export default function BrowserPage() {
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [rootDir, setRootDir] = useState<string | null>(null);
 
+  const handleCopy = async () => {
+    if (selectedFiles.length === 0) {
+      toast.error("Please select files to copy");
+      return;
+    }
+
+    const result = await downloadSelectedFiles(selectedFiles, rootDir);
+
+    if (result.isSuccess) {
+      try {
+        await navigator.clipboard.writeText(result.data.content);
+        toast.success("Files copied to clipboard");
+      } catch (error) {
+        toast.error("Failed to copy to clipboard");
+      }
+    } else {
+      toast.error(result.message);
+    }
+  };
+
   const handleDownload = async () => {
     if (selectedFiles.length === 0) {
       toast.error("Please select files to download");
@@ -67,6 +87,13 @@ export default function BrowserPage() {
             disabled={selectedFiles.length === 0}
           >
             Clear Selection
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleCopy}
+            disabled={selectedFiles.length === 0}
+          >
+            Copy Selected
           </Button>
           <Button
             onClick={handleDownload}
