@@ -30,13 +30,18 @@ cp .env.example .env.local
 PROJECT_DIRECTORY=/path/to/your/project # Ex: /Users/you/your-project
 ```
 
-## About Me
+## About the Authors
 
-I'm Mckay. I like to build AI tools.
+Original author: Mckay. I like to build AI tools.
 
-Follow me here:
+Follow him here:
 
 - [X](https://x.com/mckaywrigley)
 - [YouTube](https://www.youtube.com/@realmckaywrigley)
 - [GitHub](https://github.com/mckaywrigley)
 - [Newsletter](https://mckaywrigley.substack.com/)
+
+Contributor: Kostiantyn @latand
+
+- [Telegram](https://t.me/latand)
+- [GitHub](https://github.com/latand)
