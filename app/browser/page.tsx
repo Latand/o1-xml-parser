@@ -5,11 +5,13 @@ import { downloadSelectedFiles, getFileStats } from "@/actions/file-actions";
 import { DirectoryBrowser } from "./_components/directory-browser";
 import { FileStats } from "./_components/file-stats";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 
 export default function BrowserPage() {
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [rootDir, setRootDir] = useState<string | null>(null);
+  const [taskPrompt, setTaskPrompt] = useState<string>("");
 
   const handleCopy = async () => {
     if (selectedFiles.length === 0) {
@@ -21,7 +23,10 @@ export default function BrowserPage() {
 
     if (result.isSuccess) {
       try {
-        await navigator.clipboard.writeText(result.data.content);
+        const content =
+          result.data.content +
+          (taskPrompt ? `\n\n## Tasks\n${taskPrompt}` : "");
+        await navigator.clipboard.writeText(content);
         toast.success("Files copied to clipboard");
       } catch (error) {
         toast.error("Failed to copy to clipboard");
@@ -40,8 +45,10 @@ export default function BrowserPage() {
     const result = await downloadSelectedFiles(selectedFiles, rootDir);
 
     if (result.isSuccess) {
+      const content =
+        result.data.content + (taskPrompt ? `\n\n## Tasks\n${taskPrompt}` : "");
       // Download file
-      const blob = new Blob([result.data.content], { type: "text/plain" });
+      const blob = new Blob([content], { type: "text/plain" });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -53,7 +60,7 @@ export default function BrowserPage() {
 
       // Copy to clipboard
       try {
-        await navigator.clipboard.writeText(result.data.content);
+        await navigator.clipboard.writeText(content);
         toast.success("Files downloaded and copied to clipboard");
       } catch (error) {
         toast.success("Files downloaded");
@@ -77,13 +84,16 @@ export default function BrowserPage() {
   };
 
   return (
-    <div className="container mx-auto p-4">
-      <div className="flex justify-between items-center mb-4">
+    <div className="container mx-auto p-4 space-y-4">
+      <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold">File Browser</h1>
         <div className="space-x-2">
           <Button
             variant="outline"
-            onClick={() => setSelectedFiles([])}
+            onClick={() => {
+              setSelectedFiles([]);
+              setTaskPrompt("");
+            }}
             disabled={selectedFiles.length === 0}
           >
             Clear Selection
@@ -118,6 +128,26 @@ export default function BrowserPage() {
             rootDir={rootDir}
           />
         </div>
+      </div>
+
+      <div className="border border-gray-800 rounded-lg p-4 bg-gray-900/50">
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-sm font-medium">Task Description</div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setTaskPrompt("")}
+            disabled={!taskPrompt}
+          >
+            Clear Task
+          </Button>
+        </div>
+        <Textarea
+          value={taskPrompt}
+          onChange={(e) => setTaskPrompt(e.target.value)}
+          placeholder="Describe the task you want to perform with these files..."
+          className="min-h-[150px] resize-y bg-background"
+        />
       </div>
     </div>
   );
