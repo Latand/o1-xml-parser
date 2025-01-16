@@ -188,7 +188,12 @@ export function DirectoryBrowser({
             ) : (
               <File className="w-4 h-4 text-gray-400 shrink-0" />
             )}
-            <span className="text-sm flex-1 truncate">{entry.name}</span>
+            <button
+              onClick={() => entry.isDirectory && setCurrentPath(entry.path)}
+              className="text-sm flex-1 truncate text-left hover:text-blue-400 transition-colors"
+            >
+              {entry.name}
+            </button>
             {entry.isDirectory && (
               <div className="flex gap-1 shrink-0">
                 {!rootPath && (
