@@ -20,6 +20,7 @@ export default function BrowserPage() {
     const result = await downloadSelectedFiles(selectedFiles, rootDir);
 
     if (result.isSuccess) {
+      // Download file
       const blob = new Blob([result.data.content], { type: "text/plain" });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -29,7 +30,15 @@ export default function BrowserPage() {
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
-      toast.success("Files downloaded successfully");
+
+      // Copy to clipboard
+      try {
+        await navigator.clipboard.writeText(result.data.content);
+        toast.success("Files downloaded and copied to clipboard");
+      } catch (error) {
+        toast.success("Files downloaded");
+        toast.error("Failed to copy to clipboard");
+      }
     } else {
       toast.error(result.message);
     }
@@ -41,10 +50,10 @@ export default function BrowserPage() {
 
   const handleSelectedFilesChange = (
     files: string[],
-    newRootDir: string | null
+    newRootDir?: string | null
   ) => {
     setSelectedFiles(files);
-    setRootDir(newRootDir);
+    setRootDir(newRootDir ?? null);
   };
 
   return (

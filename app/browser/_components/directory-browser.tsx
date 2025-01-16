@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { readDirectory, getAllFilesInDirectory } from "@/actions/file-actions";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { FolderOpen, File, ChevronRight, Home } from "lucide-react";
 import { toast } from "sonner";
 import path from "path";
@@ -19,19 +20,26 @@ export function DirectoryBrowser({
 }: DirectoryBrowserProps) {
   const [currentPath, setCurrentPath] = useState(process.env.HOME || "/home");
   const [rootPath, setRootPath] = useState<string | null>(null);
+  const [skipPatterns, setSkipPatterns] = useState<string>("");
   const [entries, setEntries] = useState<
     Array<{ name: string; path: string; isDirectory: boolean }>
   >([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadingFolder, setLoadingFolder] = useState<string | null>(null);
 
+  const getSkipPatterns = () =>
+    skipPatterns
+      .split(",")
+      .map((p) => p.trim())
+      .filter(Boolean);
+
   useEffect(() => {
     loadDirectory(currentPath);
-  }, [currentPath]);
+  }, [currentPath, skipPatterns]);
 
   const loadDirectory = async (dirPath: string) => {
     setIsLoading(true);
-    const result = await readDirectory(dirPath);
+    const result = await readDirectory(dirPath, getSkipPatterns());
     if (result.isSuccess) {
       setEntries(result.data);
     }
@@ -46,7 +54,7 @@ export function DirectoryBrowser({
   const handleFolderSelect = async (dirPath: string) => {
     setLoadingFolder(dirPath);
     try {
-      const result = await getAllFilesInDirectory(dirPath);
+      const result = await getAllFilesInDirectory(dirPath, getSkipPatterns());
       if (result.isSuccess) {
         const folderFiles = result.data;
         const relativeFiles = folderFiles.map(getRelativePath);
@@ -107,7 +115,7 @@ export function DirectoryBrowser({
 
   return (
     <div className="border border-gray-800 rounded-lg overflow-hidden max-w-3xl">
-      <div className="bg-gray-900 p-4 border-b border-gray-800">
+      <div className="bg-gray-900 p-4 border-b border-gray-800 space-y-4">
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
@@ -138,6 +146,16 @@ export function DirectoryBrowser({
               Clear Root
             </Button>
           )}
+        </div>
+
+        <div className="flex gap-2 items-center">
+          <div className="text-sm text-gray-400">Skip patterns:</div>
+          <Input
+            value={skipPatterns}
+            onChange={(e) => setSkipPatterns(e.target.value)}
+            placeholder="e.g. *.txt,*.md,temp/*"
+            className="flex-1 h-8 text-sm"
+          />
         </div>
       </div>
 

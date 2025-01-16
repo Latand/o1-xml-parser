@@ -16,6 +16,10 @@ interface Stats {
   characters: number;
   tokens: number;
   files: number;
+  fileStats: Array<{
+    path: string;
+    characters: number;
+  }>;
 }
 
 export function FileStats({
@@ -51,6 +55,10 @@ export function FileStats({
 
   const formatNumber = (num: number) => {
     return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  };
+
+  const formatKiloChars = (chars: number) => {
+    return (chars / 1000).toFixed(1) + "k";
   };
 
   if (selectedFiles.length === 0) {
@@ -127,7 +135,7 @@ export function FileStats({
       <div className="border-t border-gray-800 pt-4">
         <div className="text-base font-medium pb-2">Selected paths:</div>
         <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2">
-          {selectedFiles.map((file) => (
+          {stats?.fileStats.map(({ path: file, characters }) => (
             <div
               key={file}
               className="flex items-center gap-2 group hover:bg-gray-800/50 rounded p-2"
@@ -137,6 +145,9 @@ export function FileStats({
                 title={file}
               >
                 {file}
+                <span className="text-gray-400 ml-2">
+                  ({formatKiloChars(characters)})
+                </span>
               </div>
               {onRemoveFile && (
                 <Button
