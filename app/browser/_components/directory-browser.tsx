@@ -160,62 +160,69 @@ export function DirectoryBrowser({
       </div>
 
       <div className="divide-y divide-gray-800">
-        {entries.map((entry) => (
-          <div
-            key={entry.path}
-            className="flex items-center gap-2 p-2 hover:bg-gray-900/50 pr-4"
-          >
-            <Checkbox
-              checked={
-                entry.isDirectory
-                  ? loadingFolder === entry.path
-                    ? undefined
-                    : selectedFiles.some((file) =>
-                        file.startsWith(getRelativePath(entry.path) + "/")
-                      )
-                  : selectedFiles.includes(getRelativePath(entry.path))
-              }
-              onCheckedChange={() =>
-                entry.isDirectory
-                  ? handleFolderSelect(entry.path)
-                  : handleFileSelect(entry.path)
-              }
-              disabled={loadingFolder === entry.path}
-              className="ml-2"
-            />
-            {entry.isDirectory ? (
-              <FolderOpen className="w-4 h-4 text-blue-400 shrink-0" />
-            ) : (
-              <File className="w-4 h-4 text-gray-400 shrink-0" />
-            )}
-            <button
-              onClick={() => entry.isDirectory && setCurrentPath(entry.path)}
-              className="text-sm flex-1 truncate text-left hover:text-blue-400 transition-colors"
+        {entries
+          .sort((a, b) => {
+            if (a.isDirectory === b.isDirectory) {
+              return a.name.localeCompare(b.name);
+            }
+            return a.isDirectory ? -1 : 1;
+          })
+          .map((entry) => (
+            <div
+              key={entry.path}
+              className="flex items-center gap-2 p-2 hover:bg-gray-900/50 pr-4"
             >
-              {entry.name}
-            </button>
-            {entry.isDirectory && (
-              <div className="flex gap-1 shrink-0">
-                {!rootPath && (
+              <Checkbox
+                checked={
+                  entry.isDirectory
+                    ? loadingFolder === entry.path
+                      ? undefined
+                      : selectedFiles.some((file) =>
+                          file.startsWith(getRelativePath(entry.path) + "/")
+                        )
+                    : selectedFiles.includes(getRelativePath(entry.path))
+                }
+                onCheckedChange={() =>
+                  entry.isDirectory
+                    ? handleFolderSelect(entry.path)
+                    : handleFileSelect(entry.path)
+                }
+                disabled={loadingFolder === entry.path}
+                className="ml-2"
+              />
+              {entry.isDirectory ? (
+                <FolderOpen className="w-4 h-4 text-blue-400 shrink-0" />
+              ) : (
+                <File className="w-4 h-4 text-gray-400 shrink-0" />
+              )}
+              <button
+                onClick={() => entry.isDirectory && setCurrentPath(entry.path)}
+                className="text-sm flex-1 truncate text-left hover:text-blue-400 transition-colors"
+              >
+                {entry.name}
+              </button>
+              {entry.isDirectory && (
+                <div className="flex gap-1 shrink-0">
+                  {!rootPath && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleSetRoot(entry.path)}
+                    >
+                      <Home className="w-4 h-4" />
+                    </Button>
+                  )}
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => handleSetRoot(entry.path)}
+                    onClick={() => setCurrentPath(entry.path)}
                   >
-                    <Home className="w-4 h-4" />
+                    <ChevronRight className="w-4 h-4" />
                   </Button>
-                )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPath(entry.path)}
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </Button>
-              </div>
-            )}
-          </div>
-        ))}
+                </div>
+              )}
+            </div>
+          ))}
 
         {entries.length === 0 && (
           <div className="p-4 text-sm text-gray-500 text-center">
