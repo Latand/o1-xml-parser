@@ -3,15 +3,18 @@
 import { useState } from "react";
 import { downloadSelectedFiles, getFileStats } from "@/actions/file-actions";
 import { DirectoryBrowser } from "./_components/directory-browser";
+import { RemoteDirectoryBrowser } from "./_components/remote-directory-browser";
 import { FileStats } from "./_components/file-stats";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 
 export default function BrowserPage() {
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [rootDir, setRootDir] = useState<string | null>(null);
   const [taskPrompt, setTaskPrompt] = useState<string>("");
+  const [activeTab, setActiveTab] = useState<"local" | "remote">("local");
 
   const handleCopy = async () => {
     if (selectedFiles.length === 0) {
@@ -83,6 +86,12 @@ export default function BrowserPage() {
     setRootDir(newRootDir ?? null);
   };
 
+  const handleTabChange = (value: string) => {
+    setActiveTab(value as "local" | "remote");
+    setSelectedFiles([]);
+    setRootDir(null);
+  };
+
   return (
     <div className="container mx-auto p-4 space-y-4">
       <div className="flex justify-between items-center">
@@ -116,10 +125,26 @@ export default function BrowserPage() {
 
       <div className="flex gap-4">
         <div className="flex-1">
-          <DirectoryBrowser
-            selectedFiles={selectedFiles}
-            onSelectedFilesChange={handleSelectedFilesChange}
-          />
+          <Tabs value={activeTab} onValueChange={handleTabChange}>
+            <TabsList className="mb-4">
+              <TabsTrigger value="local">Local Files</TabsTrigger>
+              <TabsTrigger value="remote">Remote Files</TabsTrigger>
+            </TabsList>
+            <TabsContent value="local">
+              <DirectoryBrowser
+                selectedFiles={selectedFiles}
+                onSelectedFilesChange={handleSelectedFilesChange}
+              />
+            </TabsContent>
+            <TabsContent value="remote">
+              <RemoteDirectoryBrowser
+                selectedFiles={selectedFiles}
+                onSelectedFilesChange={(files) =>
+                  handleSelectedFilesChange(files, null)
+                }
+              />
+            </TabsContent>
+          </Tabs>
         </div>
         <div className="w-80">
           <FileStats
