@@ -9,7 +9,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { FolderOpen, File, ChevronRight, Server } from "lucide-react";
+import { FolderOpen, File, ChevronRight, Server, Home } from "lucide-react";
 import { toast } from "sonner";
 import {
   Select,
@@ -18,10 +18,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import path from "path";
 
 interface RemoteDirectoryBrowserProps {
   selectedFiles: string[];
-  onSelectedFilesChange: (files: string[]) => void;
+  onSelectedFilesChange: (files: string[], rootDir?: string | null) => void;
 }
 
 interface SSHConnectionForm {
@@ -45,6 +46,7 @@ export function RemoteDirectoryBrowser({
   onSelectedFilesChange,
 }: RemoteDirectoryBrowserProps) {
   const [currentPath, setCurrentPath] = useState("/");
+  const [rootPath, setRootPath] = useState<string | null>(null);
   const [entries, setEntries] = useState<
     Array<{
       name: string;
@@ -59,6 +61,7 @@ export function RemoteDirectoryBrowser({
   const [configHosts, setConfigHosts] = useState<SSHConfigHost[]>([]);
   const [selectedHost, setSelectedHost] = useState<string>("");
   const [needsPassphrase, setNeedsPassphrase] = useState(false);
+  const [loadingFolder, setLoadingFolder] = useState<string | null>(null);
   const [connectionForm, setConnectionForm] = useState<SSHConnectionForm>({
     host: "",
     port: "22",
@@ -101,6 +104,75 @@ export function RemoteDirectoryBrowser({
     } else {
       setNeedsPassphrase(false);
     }
+  };
+
+  const getRelativePath = (fullPath: string) => {
+    if (!rootPath) return fullPath;
+    return path.posix.relative(rootPath, fullPath);
+  };
+
+  const handleFolderSelect = async (dirPath: string) => {
+    setLoadingFolder(dirPath);
+    try {
+      const host = configHosts.find((h) => h.name === selectedHost);
+      const result = await readRemoteDirectory(
+        {
+          host: connectionForm.host,
+          port: parseInt(connectionForm.port),
+          username: connectionForm.username,
+          password: connectionForm.password || undefined,
+          passphrase: connectionForm.passphrase || undefined,
+        },
+        dirPath,
+        host?.identityFile
+      );
+
+      if (result.isSuccess) {
+        const folderFiles = result.data
+          .filter((entry) => !entry.isDirectory)
+          .map((entry) => entry.path);
+        const relativeFiles = folderFiles.map(getRelativePath);
+        const allSelected = relativeFiles.every((file) =>
+          selectedFiles.includes(file)
+        );
+
+        if (allSelected) {
+          onSelectedFilesChange(
+            selectedFiles.filter((file) => !relativeFiles.includes(file)),
+            rootPath
+          );
+        } else {
+          const newSelection = Array.from(
+            new Set([...selectedFiles, ...relativeFiles])
+          );
+          onSelectedFilesChange(newSelection, rootPath);
+        }
+      } else {
+        toast.error("Failed to load folder contents");
+      }
+    } catch (error) {
+      toast.error("Failed to select folder");
+    } finally {
+      setLoadingFolder(null);
+    }
+  };
+
+  const handleFileSelect = (filePath: string) => {
+    const relativePath = getRelativePath(filePath);
+    if (selectedFiles.includes(relativePath)) {
+      onSelectedFilesChange(
+        selectedFiles.filter((f) => f !== relativePath),
+        rootPath
+      );
+    } else {
+      onSelectedFilesChange([...selectedFiles, relativePath], rootPath);
+    }
+  };
+
+  const handleSetRoot = (dirPath: string) => {
+    setRootPath(dirPath);
+    onSelectedFilesChange([], dirPath);
+    toast.success("Root directory set");
   };
 
   const handleConnect = async () => {
@@ -159,14 +231,6 @@ export function RemoteDirectoryBrowser({
       toast.error("Failed to read directory");
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const handleFileSelect = (filePath: string) => {
-    if (selectedFiles.includes(filePath)) {
-      onSelectedFilesChange(selectedFiles.filter((f) => f !== filePath));
-    } else {
-      onSelectedFilesChange([...selectedFiles, filePath]);
     }
   };
 
@@ -274,8 +338,26 @@ export function RemoteDirectoryBrowser({
             Up
           </Button>
           <div className="text-sm text-gray-400 truncate flex-1">
+            {rootPath ? (
+              <>
+                <span className="text-blue-400">Root: {rootPath}</span>
+                <br />
+              </>
+            ) : null}
             Current: {currentPath}
           </div>
+          {rootPath && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setRootPath(null);
+                onSelectedFilesChange([], null);
+              }}
+            >
+              Clear Root
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"
@@ -305,11 +387,21 @@ export function RemoteDirectoryBrowser({
               className="flex items-center gap-2 p-2 hover:bg-gray-900/50 pr-4"
             >
               <Checkbox
-                checked={selectedFiles.includes(entry.path)}
-                onCheckedChange={() =>
-                  !entry.isDirectory && handleFileSelect(entry.path)
+                checked={
+                  entry.isDirectory
+                    ? loadingFolder === entry.path
+                      ? undefined
+                      : selectedFiles.some((file) =>
+                          file.startsWith(getRelativePath(entry.path) + "/")
+                        )
+                    : selectedFiles.includes(getRelativePath(entry.path))
                 }
-                disabled={entry.isDirectory}
+                onCheckedChange={() =>
+                  entry.isDirectory
+                    ? handleFolderSelect(entry.path)
+                    : handleFileSelect(entry.path)
+                }
+                disabled={loadingFolder === entry.path}
                 className="ml-2"
               />
               {entry.isDirectory ? (
@@ -324,13 +416,24 @@ export function RemoteDirectoryBrowser({
                 {entry.name}
               </button>
               {entry.isDirectory && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => loadDirectory(entry.path)}
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </Button>
+                <div className="flex gap-1 shrink-0">
+                  {!rootPath && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleSetRoot(entry.path)}
+                    >
+                      <Home className="w-4 h-4" />
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => loadDirectory(entry.path)}
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </Button>
+                </div>
               )}
             </div>
           ))}
