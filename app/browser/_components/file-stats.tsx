@@ -2,16 +2,27 @@
 
 import { useEffect, useState } from "react";
 import { getFileStats } from "@/actions/file-actions";
-import { Loader2, X } from "lucide-react";
+import { getRemoteFileStats } from "@/actions/ssh-actions";
+import { X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 
 interface FileStatsProps {
   selectedFiles: string[];
-  onRemoveFile?: (file: string) => void;
+  onRemoveFile: (file: string) => void;
   rootDir?: string | null;
+  isRemote?: boolean;
+  sshConfig?: {
+    host: string;
+    port: number;
+    username: string;
+    password?: string;
+    passphrase?: string;
+    identityFile?: string;
+  } | null;
 }
 
-interface Stats {
+interface FileStats {
   lines: number;
   characters: number;
   tokens: number;
@@ -26,32 +37,49 @@ export function FileStats({
   selectedFiles,
   onRemoveFile,
   rootDir,
+  isRemote,
+  sshConfig,
 }: FileStatsProps) {
-  const [stats, setStats] = useState<Stats | null>(null);
+  const [stats, setStats] = useState<FileStats | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    const loadStats = async () => {
-      if (selectedFiles.length === 0) {
-        setStats(null);
-        return;
-      }
+    if (selectedFiles.length === 0) {
+      setStats(null);
+      return;
+    }
 
+    const loadStats = async () => {
       setIsLoading(true);
       try {
-        const result = await getFileStats(selectedFiles, rootDir);
-        if (result.isSuccess) {
-          setStats(result.data);
+        if (isRemote && sshConfig) {
+          const result = await getRemoteFileStats(
+            sshConfig,
+            selectedFiles,
+            sshConfig.identityFile
+          );
+          if (result.isSuccess) {
+            setStats(result.data);
+          } else {
+            toast.error(result.message);
+          }
+        } else {
+          const result = await getFileStats(selectedFiles, rootDir);
+          if (result.isSuccess) {
+            setStats(result.data);
+          } else {
+            toast.error(result.message);
+          }
         }
       } catch (error) {
-        console.error("Failed to load stats:", error);
+        toast.error("Failed to load file stats");
       } finally {
         setIsLoading(false);
       }
     };
 
     loadStats();
-  }, [selectedFiles, rootDir]);
+  }, [selectedFiles, rootDir, isRemote, sshConfig]);
 
   const formatNumber = (num: number) => {
     return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
@@ -149,16 +177,14 @@ export function FileStats({
                   ({formatKiloChars(characters)})
                 </span>
               </div>
-              {onRemoveFile && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                  onClick={() => onRemoveFile(file)}
-                >
-                  <X className="w-4 h-4" />
-                </Button>
-              )}
+              <Button
+                variant="outline"
+                size="sm"
+                className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                onClick={() => onRemoveFile(file)}
+              >
+                <X className="w-4 h-4" />
+              </Button>
             </div>
           ))}
         </div>

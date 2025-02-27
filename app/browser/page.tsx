@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { downloadSelectedFiles, getFileStats } from "@/actions/file-actions";
+import { downloadSelectedFiles } from "@/actions/file-actions";
 import { DirectoryBrowser } from "./_components/directory-browser";
 import { RemoteDirectoryBrowser } from "./_components/remote-directory-browser";
 import { FileStats } from "./_components/file-stats";
@@ -10,11 +10,21 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 
+interface SSHConfig {
+  host: string;
+  port: number;
+  username: string;
+  password?: string;
+  passphrase?: string;
+  identityFile?: string;
+}
+
 export default function BrowserPage() {
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [rootDir, setRootDir] = useState<string | null>(null);
   const [taskPrompt, setTaskPrompt] = useState<string>("");
   const [activeTab, setActiveTab] = useState<"local" | "remote">("local");
+  const [sshConfig, setSSHConfig] = useState<SSHConfig | null>(null);
 
   const handleCopy = async () => {
     if (selectedFiles.length === 0) {
@@ -82,14 +92,42 @@ export default function BrowserPage() {
     files: string[],
     newRootDir?: string | null
   ) => {
+    // Skip unnecessary updates
+    if (
+      files.length === selectedFiles.length &&
+      files.every((f) => selectedFiles.includes(f)) &&
+      newRootDir === rootDir
+    ) {
+      return;
+    }
+
     setSelectedFiles(files);
-    setRootDir(newRootDir ?? null);
+
+    if (newRootDir !== undefined) {
+      setRootDir(newRootDir);
+
+      // Don't update identityFile when root dir changes
+      // The identityFile should only be set during connection
+    }
+  };
+
+  const handleSSHConfigChange = (config: SSHConfig | null) => {
+    setSSHConfig(config);
+
+    // Reset selection when connection changes
+    if (config === null) {
+      setSelectedFiles([]);
+      setRootDir(null);
+    }
   };
 
   const handleTabChange = (value: string) => {
+    if (value === activeTab) return;
+
     setActiveTab(value as "local" | "remote");
     setSelectedFiles([]);
     setRootDir(null);
+    setSSHConfig(null);
   };
 
   return (
@@ -139,9 +177,8 @@ export default function BrowserPage() {
             <TabsContent value="remote">
               <RemoteDirectoryBrowser
                 selectedFiles={selectedFiles}
-                onSelectedFilesChange={(files) =>
-                  handleSelectedFilesChange(files, null)
-                }
+                onSelectedFilesChange={handleSelectedFilesChange}
+                onSSHConfigChange={handleSSHConfigChange}
               />
             </TabsContent>
           </Tabs>
@@ -151,6 +188,8 @@ export default function BrowserPage() {
             selectedFiles={selectedFiles}
             onRemoveFile={handleRemoveFile}
             rootDir={rootDir}
+            isRemote={activeTab === "remote"}
+            sshConfig={sshConfig}
           />
         </div>
       </div>
