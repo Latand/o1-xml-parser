@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { motion } from "framer-motion";
 import {
@@ -16,17 +16,23 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
-
-interface SSHConfig {
-  host: string;
-  port: number;
-  username: string;
-  password?: string;
-  passphrase?: string;
-  identityFile?: string;
-}
+import {
+  loadSessionState,
+  saveSelectedFiles,
+  saveRootDir,
+  saveActiveTab,
+  saveBrowserTab,
+  saveSSHConfig,
+  saveProjectDirectory,
+  saveTaskPrompt,
+  saveConnectionStatus,
+  SSHConfig,
+} from "@/lib/session";
 
 export default function HomePage() {
+  // Load session state on initial render
+  const [sessionLoaded, setSessionLoaded] = useState(false);
+
   // Browser tab state
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [rootDir, setRootDir] = useState<string | null>(null);
@@ -35,9 +41,29 @@ export default function HomePage() {
   const [sshConfig, setSSHConfig] = useState<SSHConfig | null>(null);
   const [isCopying, setIsCopying] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
 
   // Apply tab state
   const [projectDirectory, setProjectDirectory] = useState<string>("");
+  const [activeTab, setActiveTab] = useState("browser");
+
+  // Load session state on initial render
+  useEffect(() => {
+    if (typeof window !== "undefined" && !sessionLoaded) {
+      const session = loadSessionState();
+
+      setSelectedFiles(session.selectedFiles);
+      setRootDir(session.rootDir);
+      setActiveTab(session.activeTab);
+      setBrowserTab(session.browserTab);
+      setSSHConfig(session.sshConfig);
+      setProjectDirectory(session.projectDirectory);
+      setTaskPrompt(session.taskPrompt);
+      setIsConnected(session.isConnected);
+
+      setSessionLoaded(true);
+    }
+  }, [sessionLoaded]);
 
   const handleCopy = async () => {
     if (selectedFiles.length === 0) {
@@ -134,7 +160,9 @@ export default function HomePage() {
   };
 
   const handleRemoveFile = (file: string) => {
-    setSelectedFiles((prev) => prev.filter((f) => f !== file));
+    const newFiles = selectedFiles.filter((f) => f !== file);
+    setSelectedFiles(newFiles);
+    saveSelectedFiles(newFiles);
   };
 
   const handleSelectedFilesChange = (
@@ -142,21 +170,38 @@ export default function HomePage() {
     newRootDir?: string | null
   ) => {
     setSelectedFiles(files);
+    saveSelectedFiles(files);
+
     if (newRootDir !== undefined) {
       setRootDir(newRootDir);
+      saveRootDir(newRootDir);
     }
   };
 
   const handleSSHConfigChange = (config: SSHConfig | null) => {
     setSSHConfig(config);
+    saveSSHConfig(config);
+
+    // Update connection status
+    const newConnectionStatus = !!config;
+    setIsConnected(newConnectionStatus);
+    saveConnectionStatus(newConnectionStatus);
   };
 
   const handleBrowserTabChange = (value: string) => {
-    setBrowserTab(value as "local" | "remote");
+    const newTab = value as "local" | "remote";
+    setBrowserTab(newTab);
+    saveBrowserTab(newTab);
+  };
+
+  const handleActiveTabChange = (value: string) => {
+    setActiveTab(value);
+    saveActiveTab(value);
   };
 
   const handlePathChange = async (value: string) => {
     setProjectDirectory(value);
+    saveProjectDirectory(value);
 
     // You can add additional logic here if needed, similar to the original ApplyPage
     if (value.trim()) {
@@ -165,6 +210,11 @@ export default function HomePage() {
         // Handle suggestions if needed
       }
     }
+  };
+
+  const handleTaskPromptChange = (value: string) => {
+    setTaskPrompt(value);
+    saveTaskPrompt(value);
   };
 
   const containerVariants = {
@@ -205,7 +255,12 @@ export default function HomePage() {
         </div>
       </motion.div>
 
-      <Tabs defaultValue="browser" className="w-full">
+      <Tabs
+        defaultValue="browser"
+        value={activeTab}
+        onValueChange={handleActiveTabChange}
+        className="w-full"
+      >
         <TabsList className="grid w-full grid-cols-2 mb-6">
           <TabsTrigger value="browser">File Browser</TabsTrigger>
           <TabsTrigger value="apply">Apply Changes</TabsTrigger>
@@ -237,6 +292,8 @@ export default function HomePage() {
                       selectedFiles={selectedFiles}
                       onSelectedFilesChange={handleSelectedFilesChange}
                       onSSHConfigChange={handleSSHConfigChange}
+                      initialIsConnected={isConnected}
+                      initialSSHConfig={sshConfig}
                     />
                   </TabsContent>
                 </Tabs>
@@ -264,7 +321,7 @@ export default function HomePage() {
                     placeholder="Describe the task you want to accomplish with these files..."
                     className="min-h-[100px]"
                     value={taskPrompt}
-                    onChange={(e) => setTaskPrompt(e.target.value)}
+                    onChange={(e) => handleTaskPromptChange(e.target.value)}
                   />
                 </div>
 
@@ -311,6 +368,7 @@ export default function HomePage() {
               rootDir={rootDir}
               isRemote={browserTab === "remote"}
               sshConfig={browserTab === "remote" ? sshConfig : null}
+              onProjectDirectoryChange={handlePathChange}
             />
           </motion.div>
         </TabsContent>

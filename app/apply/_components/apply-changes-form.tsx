@@ -12,13 +12,15 @@ interface ApplyChangesFormProps {
   rootDir?: string | null;
   isRemote?: boolean;
   sshConfig?: SSHConfig | null;
+  onProjectDirectoryChange?: (value: string) => void;
 }
 
 export function ApplyChangesForm({
   projectDirectory,
   rootDir,
   isRemote = false,
-  sshConfig,
+  sshConfig = null,
+  onProjectDirectoryChange,
 }: ApplyChangesFormProps) {
   const [xml, setXml] = useState<string>("");
   const [successMessage, setSuccessMessage] = useState<string>("");
@@ -36,6 +38,13 @@ export function ApplyChangesForm({
       if (timer) clearTimeout(timer);
     };
   }, [successMessage]);
+
+  useEffect(() => {
+    // Notify parent component when projectDirectory changes
+    if (onProjectDirectoryChange && projectDirectory) {
+      onProjectDirectoryChange(projectDirectory);
+    }
+  }, [projectDirectory, onProjectDirectoryChange]);
 
   const handleApply = async () => {
     setErrorMessage("");
