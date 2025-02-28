@@ -3,15 +3,27 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { applyChangesAction } from "@/actions/apply-changes-actions";
+import { toast } from "sonner";
+import { Loader2 } from "lucide-react";
+import { SSHConfig } from "@/types";
 
 interface ApplyChangesFormProps {
   projectDirectory: string;
+  rootDir?: string | null;
+  isRemote?: boolean;
+  sshConfig?: SSHConfig | null;
 }
 
-export function ApplyChangesForm({ projectDirectory }: ApplyChangesFormProps) {
+export function ApplyChangesForm({
+  projectDirectory,
+  rootDir,
+  isRemote = false,
+  sshConfig,
+}: ApplyChangesFormProps) {
   const [xml, setXml] = useState<string>("");
   const [successMessage, setSuccessMessage] = useState<string>("");
   const [errorMessage, setErrorMessage] = useState<string>("");
+  const [isApplying, setIsApplying] = useState(false);
 
   useEffect(() => {
     let timer: NodeJS.Timeout;
@@ -31,17 +43,32 @@ export function ApplyChangesForm({ projectDirectory }: ApplyChangesFormProps) {
       setErrorMessage("Please paste XML before applying changes.");
       return;
     }
-    if (!projectDirectory.trim()) {
-      setErrorMessage("Please select a project directory.");
+
+    // Use rootDir if available, otherwise use projectDirectory
+    const targetDirectory = rootDir || projectDirectory.trim();
+
+    if (!targetDirectory) {
+      setErrorMessage("Please select a directory.");
       return;
     }
 
+    setIsApplying(true);
+    toast.info("Applying changes...");
+
     try {
-      await applyChangesAction(xml, projectDirectory.trim());
+      await applyChangesAction(xml, targetDirectory, isRemote, sshConfig);
       setXml("");
       setSuccessMessage("Changes applied successfully");
+      toast.success("Changes applied successfully");
     } catch (error: any) {
-      setErrorMessage("An error occurred while applying changes.");
+      const errorMsg =
+        error instanceof Error
+          ? error.message
+          : "An error occurred while applying changes.";
+      setErrorMessage(errorMsg);
+      toast.error(errorMsg);
+    } finally {
+      setIsApplying(false);
     }
   };
 
@@ -68,13 +95,34 @@ export function ApplyChangesForm({ projectDirectory }: ApplyChangesFormProps) {
         />
       </div>
 
-      <Button
-        onClick={handleApply}
-        disabled={!xml.trim() || !projectDirectory.trim()}
-        className="w-full"
-      >
-        Apply Changes
-      </Button>
+      <div className="flex flex-col gap-2">
+        <div className="text-sm text-gray-400">
+          {isRemote
+            ? `Changes will be applied to remote directory: ${
+                rootDir || "Not selected"
+              }`
+            : `Changes will be applied to local directory: ${
+                rootDir || projectDirectory || "Not selected"
+              }`}
+        </div>
+
+        <Button
+          onClick={handleApply}
+          disabled={
+            !xml.trim() || (!rootDir && !projectDirectory.trim()) || isApplying
+          }
+          className="w-full"
+        >
+          {isApplying ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Applying Changes...
+            </>
+          ) : (
+            "Apply Changes"
+          )}
+        </Button>
+      </div>
     </div>
   );
 }

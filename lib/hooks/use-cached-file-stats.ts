@@ -6,6 +6,46 @@ import { getRemoteFileStats } from "@/actions/ssh-actions";
 import { toast } from "sonner";
 import { FileStats, SSHConfig, FileCache } from "@/types";
 
+// Define file size thresholds
+const LARGE_FILE_SIZE = 500000; // 500KB
+const BINARY_FILE_EXTENSIONS = [
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".bmp",
+  ".ico",
+  ".webp",
+  ".mp4",
+  ".webm",
+  ".mov",
+  ".avi",
+  ".mp3",
+  ".wav",
+  ".ogg",
+  ".pdf",
+  ".zip",
+  ".rar",
+  ".7z",
+  ".tar",
+  ".gz",
+  ".exe",
+  ".dll",
+  ".so",
+  ".dylib",
+  ".bin",
+  ".dat",
+  ".db",
+  ".sqlite",
+  ".class",
+];
+
+// Check if a file is likely binary based on extension
+function isBinaryFile(filePath: string): boolean {
+  const lowerPath = filePath.toLowerCase();
+  return BINARY_FILE_EXTENSIONS.some((ext) => lowerPath.endsWith(ext));
+}
+
 interface CachedFileStats {
   stats: FileStats | null;
   isLoading: boolean;
@@ -51,6 +91,20 @@ export function useCachedFileStats(
           path: filePath,
           characters: cachedFile.characters,
         });
+
+        // Show warning for large files
+        if (cachedFile.characters > LARGE_FILE_SIZE) {
+          toast.warning(
+            `Large file detected: ${filePath} (${Math.round(
+              cachedFile.characters / 1024
+            )}KB)`,
+            {
+              description: "Consider removing this file or optimizing it",
+              duration: 5000,
+              id: `large-file-${filePath}`, // Prevent duplicate toasts
+            }
+          );
+        }
       }
     }
 
@@ -63,6 +117,25 @@ export function useCachedFileStats(
     });
   }, [fileCache, selectedFiles]);
 
+  // Filter out binary files from the list
+  const filterBinaryFiles = useCallback((files: string[]): string[] => {
+    const filteredFiles = files.filter((file) => !isBinaryFile(file));
+
+    // Notify about skipped binary files if any were filtered out
+    const skippedCount = files.length - filteredFiles.length;
+    if (skippedCount > 0) {
+      toast.info(
+        `Skipped ${skippedCount} binary file${skippedCount > 1 ? "s" : ""}`,
+        {
+          description: "Binary files like images and videos are not processed",
+          duration: 3000,
+        }
+      );
+    }
+
+    return filteredFiles;
+  }, []);
+
   // Load stats for all files
   const loadAllStats = useCallback(async () => {
     if (selectedFiles.length === 0) {
@@ -74,8 +147,11 @@ export function useCachedFileStats(
     setLastError(null);
 
     try {
+      // Filter out binary files
+      const filteredFiles = filterBinaryFiles(selectedFiles);
+
       // Determine which files need to be loaded (not in cache)
-      const filesToLoad = selectedFiles.filter((file) => !fileCache[file]);
+      const filesToLoad = filteredFiles.filter((file) => !fileCache[file]);
 
       if (filesToLoad.length === 0) {
         // All files are in cache, just recalculate
@@ -149,6 +225,7 @@ export function useCachedFileStats(
     sshConfig,
     fileCache,
     calculateStatsFromCache,
+    filterBinaryFiles,
   ]);
 
   // Effect to load stats when selectedFiles changes
@@ -183,6 +260,15 @@ export function useCachedFileStats(
   // Load a single file's stats
   const loadSingleFile = useCallback(
     async (filePath: string) => {
+      // Skip binary files
+      if (isBinaryFile(filePath)) {
+        toast.info(`Skipped binary file: ${filePath}`, {
+          description: "Binary files like images and videos are not processed",
+          duration: 3000,
+        });
+        return;
+      }
+
       if (fileCache[filePath]) {
         // File is already in cache
         return;
@@ -225,6 +311,20 @@ export function useCachedFileStats(
 
             setFileCache(newCache);
 
+            // Show warning for large files
+            if (characters > LARGE_FILE_SIZE) {
+              toast.warning(
+                `Large file detected: ${filePath} (${Math.round(
+                  characters / 1024
+                )}KB)`,
+                {
+                  description: "Consider removing this file or optimizing it",
+                  duration: 5000,
+                  id: `large-file-${filePath}`, // Prevent duplicate toasts
+                }
+              );
+            }
+
             // Recalculate stats if this file is in the selected files
             if (selectedFiles.includes(filePath)) {
               calculateStatsFromCache();
@@ -261,6 +361,11 @@ export function useCachedFileStats(
   // Add a single file to the stats
   const addFile = useCallback(
     (filePath: string) => {
+      // Skip binary files
+      if (isBinaryFile(filePath)) {
+        return;
+      }
+
       if (!fileCache[filePath]) {
         // Load the file stats if not in cache
         loadSingleFile(filePath).catch((error) => {

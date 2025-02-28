@@ -306,7 +306,12 @@ export default function HomePage() {
 
         <TabsContent value="apply" className="space-y-6">
           <motion.div variants={itemVariants}>
-            <ApplyChangesForm projectDirectory={projectDirectory} />
+            <ApplyChangesForm
+              projectDirectory={projectDirectory}
+              rootDir={rootDir}
+              isRemote={browserTab === "remote"}
+              sshConfig={browserTab === "remote" ? sshConfig : null}
+            />
           </motion.div>
         </TabsContent>
       </Tabs>

@@ -10,6 +10,8 @@ export interface FavoriteServer {
   password?: string;
   identityFile?: string;
   lastUsed?: number; // Timestamp of last use
+  lastDirectory?: string; // Last accessed directory
+  lastRootDirectory?: string; // Last selected root directory
 }
 
 const STORAGE_KEY = "ssh-favorites";
@@ -85,6 +87,34 @@ export function updateServerLastUsed(name: string) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
 }
 
+// Update the last accessed directory for a server
+export function updateServerLastDirectory(name: string, directory: string) {
+  const favorites = getFavoriteServers();
+  const updated = favorites.map((f) => {
+    if (f.name === name) {
+      return {
+        ...f,
+        lastDirectory: directory,
+        lastUsed: Date.now(),
+        password: f.password ? encrypt(f.password) : undefined,
+      };
+    }
+    return {
+      ...f,
+      password: f.password ? encrypt(f.password) : undefined,
+    };
+  });
+
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+}
+
+// Get the last accessed directory for a server
+export function getServerLastDirectory(name: string): string | undefined {
+  const favorites = getFavoriteServers();
+  const server = favorites.find((f) => f.name === name);
+  return server?.lastDirectory;
+}
+
 // Remove a favorite server
 export function removeFavoriteServer(name: string) {
   const favorites = getFavoriteServers();
@@ -135,4 +165,35 @@ export function renameFavoriteServer(
 
   localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
   return true;
+}
+
+// Update the last root directory for a server
+export function updateServerLastRootDirectory(
+  name: string,
+  rootDirectory: string | null
+) {
+  const favorites = getFavoriteServers();
+  const updated = favorites.map((f) => {
+    if (f.name === name) {
+      return {
+        ...f,
+        lastRootDirectory: rootDirectory || undefined,
+        lastUsed: Date.now(),
+        password: f.password ? encrypt(f.password) : undefined,
+      };
+    }
+    return {
+      ...f,
+      password: f.password ? encrypt(f.password) : undefined,
+    };
+  });
+
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+}
+
+// Get the last root directory for a server
+export function getServerLastRootDirectory(name: string): string | undefined {
+  const favorites = getFavoriteServers();
+  const server = favorites.find((f) => f.name === name);
+  return server?.lastRootDirectory;
 }

@@ -37,6 +37,10 @@ import {
   updateServerLastUsed,
   renameFavoriteServer,
   FavoriteServer,
+  updateServerLastDirectory,
+  getServerLastDirectory,
+  updateServerLastRootDirectory,
+  getServerLastRootDirectory,
 } from "@/lib/favorites";
 
 interface SSHConfig {
@@ -46,6 +50,7 @@ interface SSHConfig {
   password?: string;
   passphrase?: string;
   identityFile?: string;
+  privateKey?: string;
 }
 
 interface RemoteDirectoryBrowserProps {
@@ -104,6 +109,8 @@ export function RemoteDirectoryBrowser({
   const [favoriteServers, setFavoriteServers] = useState<FavoriteServer[]>([]);
   const [editingServer, setEditingServer] = useState<string | null>(null);
   const [newServerName, setNewServerName] = useState<string>("");
+  const [currentServerName, setCurrentServerName] = useState<string>("");
+  const [identityFile, setIdentityFile] = useState<string>("");
 
   useEffect(() => {
     loadSSHConfig();
@@ -149,27 +156,30 @@ export function RemoteDirectoryBrowser({
   };
 
   const handleFolderSelect = async (dirPath: string) => {
+    if (loadingFolder === dirPath) return;
     setLoadingFolder(dirPath);
+
     try {
-      const host = configHosts.find((h) => h.name === selectedHost);
-      const config = {
+      // Store the last accessed directory for this server if connected
+      if (isConnected && currentServerName) {
+        updateServerLastDirectory(currentServerName, dirPath);
+      }
+
+      // Create a config object that matches the server-side SSHConfig interface
+      const sshConfig = {
         host: connectionForm.host,
         port: parseInt(connectionForm.port),
         username: connectionForm.username,
         password: connectionForm.password || undefined,
         passphrase: connectionForm.passphrase || undefined,
+        // Don't include identityFile in the config object
       };
 
-      // Limit the display of the loading indicator to at least 300ms
-      // to avoid flickering for fast operations
-      const minLoadingTime = 300;
-      const startTime = Date.now();
-
       const result = await readRemoteDirectory(
-        config,
+        sshConfig,
         dirPath,
-        host?.identityFile,
-        true, // recursive
+        identityFile, // Pass identityFile as a separate parameter
+        false, // not recursive
         rootPath // Pass the rootPath parameter
       );
 
@@ -179,14 +189,6 @@ export function RemoteDirectoryBrowser({
         const allSelected = relativeFiles.every((file) =>
           selectedFiles.includes(file)
         );
-
-        // Ensure loading indicator shows for at least minLoadingTime
-        const elapsedTime = Date.now() - startTime;
-        if (elapsedTime < minLoadingTime) {
-          await new Promise((resolve) =>
-            setTimeout(resolve, minLoadingTime - elapsedTime)
-          );
-        }
 
         if (allSelected) {
           onSelectedFilesChange(
@@ -229,6 +231,11 @@ export function RemoteDirectoryBrowser({
     // Pass the new root directory but don't modify SSH config
     onSelectedFilesChange([], dirPath);
 
+    // Store the last root directory for this server if connected
+    if (isConnected && currentServerName) {
+      updateServerLastRootDirectory(currentServerName, dirPath);
+    }
+
     toast.success("Root directory set");
   };
 
@@ -244,11 +251,48 @@ export function RemoteDirectoryBrowser({
         username: connectionForm.username,
         password: connectionForm.password || undefined,
         passphrase: connectionForm.passphrase || undefined,
-        identityFile: host?.identityFile, // Pass the identity file path, not the root directory
+        // Don't include identityFile in the config object
       };
 
-      const initialPath = `/home/${connectionForm.username}`;
-      // Try the home directory first
+      // Find the server name if it's a favorite
+      let serverName = "";
+      const matchingServer = favoriteServers.find(
+        (s) =>
+          s.host === connectionForm.host &&
+          s.username === connectionForm.username
+      );
+
+      if (matchingServer) {
+        serverName = matchingServer.name;
+        setCurrentServerName(serverName);
+      } else if (connectionForm.connectionName) {
+        serverName = connectionForm.connectionName;
+        setCurrentServerName(serverName);
+      }
+
+      // Default initial path
+      let initialPath = `/home/${connectionForm.username}`;
+
+      // Check if there's a last root directory for this server
+      if (serverName) {
+        const lastRootDirectory = getServerLastRootDirectory(serverName);
+        if (lastRootDirectory) {
+          setRootPath(lastRootDirectory);
+
+          // Use the root directory as the initial browsing path
+          initialPath = lastRootDirectory;
+        }
+      }
+
+      // If no root directory, check if there's a last accessed directory
+      if (!getServerLastRootDirectory(serverName) && serverName) {
+        const lastDirectory = getServerLastDirectory(serverName);
+        if (lastDirectory) {
+          initialPath = lastDirectory;
+        }
+      }
+
+      // Try the last directory or home directory first
       const result = await readRemoteDirectory(
         config,
         initialPath,
@@ -265,61 +309,78 @@ export function RemoteDirectoryBrowser({
         toast.success("Connected to remote server");
 
         // If connecting to a favorite server, update its last used timestamp
-        const isFavorite = favoriteServers.some(
-          (s) =>
-            s.host === connectionForm.host &&
-            s.username === connectionForm.username
-        );
-
-        if (isFavorite) {
-          const serverName = favoriteServers.find(
-            (s) =>
-              s.host === connectionForm.host &&
-              s.username === connectionForm.username
-          )?.name;
-
-          if (serverName) {
-            updateServerLastUsed(serverName);
-            setFavoriteServers(getRecentFavoriteServers());
-          }
+        if (serverName) {
+          updateServerLastUsed(serverName);
+          setFavoriteServers(getRecentFavoriteServers());
         }
       } else {
-        // Check if the error is related to the home directory not existing or permission issues
+        // Check if the error is related to the directory not existing or permission issues
         if (
           result.message.includes("no such file") ||
           result.message.includes("permission denied")
         ) {
-          // Try fallback to root if home directory doesn't exist
-          const rootResult = await readRemoteDirectory(
+          // Try fallback to home directory
+          const homeDir = `/home/${connectionForm.username}`;
+          const homeResult = await readRemoteDirectory(
             config,
-            "/",
+            homeDir,
             host?.identityFile,
             false, // not recursive
             rootPath // Pass the rootPath parameter
           );
 
-          if (rootResult.isSuccess) {
-            setEntries(rootResult.data);
-            setCurrentPath("/");
+          if (homeResult.isSuccess) {
+            setEntries(homeResult.data);
+            setCurrentPath(homeDir);
             setIsConnected(true);
             onSSHConfigChange?.(config);
-            toast.success(
-              "Connected to remote server (fallback to root directory)"
-            );
+            toast.success("Connected to remote server");
+
+            // Update last directory
+            if (serverName) {
+              updateServerLastDirectory(serverName, homeDir);
+              updateServerLastUsed(serverName);
+              setFavoriteServers(getRecentFavoriteServers());
+            }
           } else {
-            toast.error(rootResult.message);
+            // Try fallback to root if home directory doesn't exist
+            const rootResult = await readRemoteDirectory(
+              config,
+              "/",
+              host?.identityFile,
+              false, // not recursive
+              rootPath // Pass the rootPath parameter
+            );
+
+            if (rootResult.isSuccess) {
+              setEntries(rootResult.data);
+              setCurrentPath("/");
+              setIsConnected(true);
+              onSSHConfigChange?.(config);
+              toast.success(
+                "Connected to remote server (using root directory)"
+              );
+
+              // Update last directory
+              if (serverName) {
+                updateServerLastDirectory(serverName, "/");
+                updateServerLastUsed(serverName);
+                setFavoriteServers(getRecentFavoriteServers());
+              }
+            } else {
+              toast.error(`Connection failed: ${rootResult.message}`);
+            }
           }
-        } else if (result.message.includes("identity file")) {
-          // If the error is related to the identity file, show a more specific message
-          toast.error(
-            "Invalid identity file. Please check your SSH configuration."
-          );
         } else {
-          toast.error(result.message);
+          toast.error(`Connection failed: ${result.message}`);
         }
       }
     } catch (error) {
-      toast.error("Failed to connect to remote server");
+      toast.error(
+        `Connection error: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
     } finally {
       setIsLoading(false);
     }
@@ -379,7 +440,8 @@ export function RemoteDirectoryBrowser({
     setIsConnected(false);
     setEntries([]);
     setCurrentPath("/");
-    onSelectedFilesChange([]);
+    setRootPath(null);
+    onSelectedFilesChange([], null);
     onSSHConfigChange?.(null);
   };
 
@@ -413,45 +475,24 @@ export function RemoteDirectoryBrowser({
   };
 
   const handleFavoriteSelect = (server: FavoriteServer) => {
-    // Update last used timestamp
-    updateServerLastUsed(server.name);
-    setFavoriteServers(getRecentFavoriteServers());
+    setConnectionForm({
+      host: server.host,
+      port: server.port,
+      username: server.username,
+      password: server.password || "",
+      passphrase: "",
+      connectionName: server.name,
+    });
 
-    // Find matching SSH config if exists
-    const matchingHost = configHosts.find(
-      (h) => h.hostname === server.host || h.name === server.host
-    );
+    // Set the current server name
+    setCurrentServerName(server.name);
 
-    if (matchingHost) {
-      setSelectedHost(matchingHost.name);
-      setConnectionForm({
-        host: server.host,
-        port: server.port,
-        username: server.username,
-        password: server.password || "",
-        passphrase: "",
-        connectionName: "",
-      });
-
-      // Check if key needs passphrase
-      if (matchingHost.identityFile) {
-        checkKeyNeedsPassphrase(matchingHost.identityFile).then((result) => {
-          if (result.isSuccess) {
-            setNeedsPassphrase(result.data);
-          }
-        });
-      }
-    } else {
+    // If the server has an identity file, select it
+    if (server.identityFile) {
+      setIdentityFile(server.identityFile);
       setSelectedHost("");
-      setConnectionForm({
-        host: server.host,
-        port: server.port,
-        username: server.username,
-        password: server.password || "",
-        passphrase: "",
-        connectionName: "",
-      });
-      setNeedsPassphrase(false);
+    } else {
+      setIdentityFile("");
     }
   };
 
