@@ -30,9 +30,13 @@ import path from "path";
 import { DirectorySkeleton } from "./directory-skeleton";
 import {
   getFavoriteServers,
+  getRecentFavoriteServers,
   addFavoriteServer,
   removeFavoriteServer,
   isFavoriteServer,
+  updateServerLastUsed,
+  renameFavoriteServer,
+  FavoriteServer,
 } from "@/lib/favorites";
 
 interface SSHConfig {
@@ -42,15 +46,6 @@ interface SSHConfig {
   password?: string;
   passphrase?: string;
   identityFile?: string;
-}
-
-interface FavoriteServer {
-  name: string;
-  host: string;
-  port: string;
-  username: string;
-  identityFile?: string;
-  password?: string;
 }
 
 interface RemoteDirectoryBrowserProps {
@@ -65,6 +60,7 @@ interface SSHConnectionForm {
   username: string;
   password: string;
   passphrase: string;
+  connectionName?: string;
 }
 
 interface SSHConfigHost {
@@ -103,12 +99,15 @@ export function RemoteDirectoryBrowser({
     username: "",
     password: "",
     passphrase: "",
+    connectionName: "",
   });
   const [favoriteServers, setFavoriteServers] = useState<FavoriteServer[]>([]);
+  const [editingServer, setEditingServer] = useState<string | null>(null);
+  const [newServerName, setNewServerName] = useState<string>("");
 
   useEffect(() => {
     loadSSHConfig();
-    setFavoriteServers(getFavoriteServers());
+    setFavoriteServers(getRecentFavoriteServers());
   }, []);
 
   const loadSSHConfig = async () => {
@@ -131,6 +130,7 @@ export function RemoteDirectoryBrowser({
       username: host.user || "",
       password: "",
       passphrase: "",
+      connectionName: "",
     });
 
     if (host.identityFile) {
@@ -212,7 +212,7 @@ export function RemoteDirectoryBrowser({
     const relativePath = getRelativePath(filePath);
     if (selectedFiles.includes(relativePath)) {
       onSelectedFilesChange(
-        selectedFiles.filter((f) => f !== relativePath),
+        selectedFiles.filter((f: string) => f !== relativePath),
         rootPath
       );
     } else {
@@ -260,6 +260,26 @@ export function RemoteDirectoryBrowser({
         setIsConnected(true);
         onSSHConfigChange?.(config);
         toast.success("Connected to remote server");
+
+        // If connecting to a favorite server, update its last used timestamp
+        const isFavorite = favoriteServers.some(
+          (s) =>
+            s.host === connectionForm.host &&
+            s.username === connectionForm.username
+        );
+
+        if (isFavorite) {
+          const serverName = favoriteServers.find(
+            (s) =>
+              s.host === connectionForm.host &&
+              s.username === connectionForm.username
+          )?.name;
+
+          if (serverName) {
+            updateServerLastUsed(serverName);
+            setFavoriteServers(getRecentFavoriteServers());
+          }
+        }
       } else {
         // Check if the error is related to the home directory not existing or permission issues
         if (
@@ -357,7 +377,10 @@ export function RemoteDirectoryBrowser({
   };
 
   const handleAddToFavorites = () => {
-    const serverName = `${connectionForm.username}@${connectionForm.host}`;
+    const serverName =
+      connectionForm.connectionName ||
+      `${connectionForm.username}@${connectionForm.host}`;
+
     addFavoriteServer({
       name: serverName,
       host: connectionForm.host,
@@ -367,17 +390,26 @@ export function RemoteDirectoryBrowser({
       identityFile: configHosts.find((h) => h.name === selectedHost)
         ?.identityFile,
     });
-    setFavoriteServers(getFavoriteServers());
-    toast.success("Added to favorites");
+    setFavoriteServers(getRecentFavoriteServers());
+    toast.success("Connection saved");
+
+    setConnectionForm({
+      ...connectionForm,
+      connectionName: "",
+    });
   };
 
   const handleRemoveFromFavorites = (name: string) => {
     removeFavoriteServer(name);
-    setFavoriteServers(getFavoriteServers());
+    setFavoriteServers(getRecentFavoriteServers());
     toast.success("Removed from favorites");
   };
 
   const handleFavoriteSelect = (server: FavoriteServer) => {
+    // Update last used timestamp
+    updateServerLastUsed(server.name);
+    setFavoriteServers(getRecentFavoriteServers());
+
     // Find matching SSH config if exists
     const matchingHost = configHosts.find(
       (h) => h.hostname === server.host || h.name === server.host
@@ -391,6 +423,7 @@ export function RemoteDirectoryBrowser({
         username: server.username,
         password: server.password || "",
         passphrase: "",
+        connectionName: "",
       });
 
       // Check if key needs passphrase
@@ -409,8 +442,54 @@ export function RemoteDirectoryBrowser({
         username: server.username,
         password: server.password || "",
         passphrase: "",
+        connectionName: "",
       });
       setNeedsPassphrase(false);
+    }
+  };
+
+  const handleEditServerName = (server: FavoriteServer) => {
+    setEditingServer(server.name);
+    setNewServerName(server.name);
+  };
+
+  const handleSaveServerName = () => {
+    if (editingServer && newServerName.trim()) {
+      const success = renameFavoriteServer(editingServer, newServerName.trim());
+      if (success) {
+        toast.success("Connection renamed");
+        setFavoriteServers(getRecentFavoriteServers());
+      } else {
+        toast.error("A connection with this name already exists");
+      }
+    }
+    setEditingServer(null);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingServer(null);
+  };
+
+  const handleSelectAll = () => {
+    const allFiles = entries
+      .filter((entry) => !entry.isDirectory)
+      .map((entry) => getRelativePath(entry.path));
+    onSelectedFilesChange([...selectedFiles, ...allFiles], rootPath);
+  };
+
+  const handleSelectNone = () => {
+    onSelectedFilesChange([], rootPath);
+  };
+
+  const handleFileClick = (entry: {
+    name: string;
+    path: string;
+    isDirectory: boolean;
+  }) => {
+    if (entry.isDirectory) {
+      loadDirectory(entry.path);
+    } else {
+      handleFileSelect(entry.path);
     }
   };
 
@@ -419,29 +498,83 @@ export function RemoteDirectoryBrowser({
       <div className="border border-gray-800 rounded-lg p-4 space-y-4">
         {favoriteServers.length > 0 && (
           <div className="space-y-2">
-            <label className="text-sm text-gray-400">Favorite Servers</label>
-            <div className="space-y-2">
+            <label className="text-sm text-gray-400">Saved Connections</label>
+            <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
               {favoriteServers.map((server) => (
                 <div
                   key={server.name}
                   className="flex items-center gap-2 p-2 border border-gray-800 rounded-lg hover:bg-gray-900/50"
                 >
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleFavoriteSelect(server)}
-                    className="flex-1 justify-start"
-                  >
-                    <Server className="w-4 h-4 mr-2" />
-                    {server.name}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleRemoveFromFavorites(server.name)}
-                  >
-                    <StarOff className="w-4 h-4 text-yellow-500" />
-                  </Button>
+                  {editingServer === server.name ? (
+                    <>
+                      <Input
+                        value={newServerName}
+                        onChange={(e) => setNewServerName(e.target.value)}
+                        className="flex-1"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleSaveServerName();
+                          if (e.key === "Escape") handleCancelEdit();
+                        }}
+                      />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleSaveServerName}
+                      >
+                        Save
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleCancelEdit}
+                      >
+                        Cancel
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleFavoriteSelect(server)}
+                        className="flex-1 justify-start"
+                      >
+                        <Server className="w-4 h-4 mr-2" />
+                        {server.name}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleEditServerName(server)}
+                        title="Rename connection"
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="w-4 h-4"
+                        >
+                          <path d="M12 20h9"></path>
+                          <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+                        </svg>
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleRemoveFromFavorites(server.name)}
+                        title="Remove connection"
+                      >
+                        <StarOff className="w-4 h-4 text-yellow-500" />
+                      </Button>
+                    </>
+                  )}
                 </div>
               ))}
             </div>
@@ -470,6 +603,17 @@ export function RemoteDirectoryBrowser({
         )}
 
         <div className="space-y-2">
+          <label className="text-sm text-gray-400">Connection Details</label>
+          <Input
+            placeholder="Connection Name (optional)"
+            value={connectionForm.connectionName || ""}
+            onChange={(e) =>
+              setConnectionForm({
+                ...connectionForm,
+                connectionName: e.target.value,
+              })
+            }
+          />
           <Input
             placeholder="Host"
             value={connectionForm.host}
@@ -520,20 +664,30 @@ export function RemoteDirectoryBrowser({
             />
           )}
         </div>
-        <div className="flex gap-2">
+        <div className="flex justify-between">
           <Button
             onClick={handleConnect}
-            disabled={isLoading}
-            className="flex-1"
+            disabled={
+              !connectionForm.host ||
+              !connectionForm.username ||
+              (!connectionForm.password &&
+                !configHosts.find((h) => h.name === selectedHost)?.identityFile)
+            }
           >
-            {isLoading ? "Connecting..." : "Connect"}
+            Connect
           </Button>
+
           <Button
             variant="outline"
             onClick={handleAddToFavorites}
-            disabled={!connectionForm.host || !connectionForm.username}
+            disabled={
+              !connectionForm.host ||
+              !connectionForm.username ||
+              (!connectionForm.password &&
+                !configHosts.find((h) => h.name === selectedHost)?.identityFile)
+            }
           >
-            <Star className="w-4 h-4" />
+            Save Connection
           </Button>
         </div>
       </div>

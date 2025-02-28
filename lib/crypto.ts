@@ -1,10 +1,51 @@
 "use client";
 
-// Simple encryption key - in a real app, this should be more secure
-const ENCRYPTION_KEY = "xml-parser-app-key";
+// Generate a more secure encryption key based on browser fingerprinting
+function generateSecureKey(): string {
+  if (typeof window === "undefined") return "default-key";
+
+  // Combine various browser properties to create a unique fingerprint
+  const fingerprint = [
+    navigator.userAgent,
+    navigator.language,
+    screen.colorDepth,
+    screen.width,
+    screen.height,
+    new Date().getTimezoneOffset(),
+    "o1-xml-parser-secure-salt", // Add a fixed salt
+  ].join("|");
+
+  // Create a hash of the fingerprint
+  let hash = 0;
+  for (let i = 0; i < fingerprint.length; i++) {
+    const char = fingerprint.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash = hash & hash; // Convert to 32bit integer
+  }
+
+  // Convert hash to hex string and use as key
+  return Math.abs(hash).toString(16).padStart(8, "0") + "-xml-parser-key";
+}
+
+// Get or create the encryption key
+const getEncryptionKey = (): string => {
+  if (typeof window === "undefined") return "default-key";
+
+  const storageKey = "xml-parser-encryption-key";
+  let key = localStorage.getItem(storageKey);
+
+  if (!key) {
+    key = generateSecureKey();
+    localStorage.setItem(storageKey, key);
+  }
+
+  return key;
+};
 
 export function encrypt(text: string): string {
   if (!text) return "";
+
+  const ENCRYPTION_KEY = getEncryptionKey();
 
   // Helper functions for encryption
   const textToChars = (text: string) =>
@@ -28,6 +69,8 @@ export function encrypt(text: string): string {
 
 export function decrypt(encoded: string): string {
   if (!encoded) return "";
+
+  const ENCRYPTION_KEY = getEncryptionKey();
 
   // Helper functions for decryption
   const textToChars = (text: string) =>
