@@ -169,7 +169,8 @@ export function RemoteDirectoryBrowser({
         config,
         dirPath,
         host?.identityFile,
-        true // recursive
+        true, // recursive
+        rootPath // Pass the rootPath parameter
       );
 
       if (result.isSuccess) {
@@ -251,7 +252,9 @@ export function RemoteDirectoryBrowser({
       const result = await readRemoteDirectory(
         config,
         initialPath,
-        host?.identityFile
+        host?.identityFile,
+        false, // not recursive
+        rootPath // Pass the rootPath parameter
       );
 
       if (result.isSuccess) {
@@ -290,7 +293,9 @@ export function RemoteDirectoryBrowser({
           const rootResult = await readRemoteDirectory(
             config,
             "/",
-            host?.identityFile
+            host?.identityFile,
+            false, // not recursive
+            rootPath // Pass the rootPath parameter
           );
 
           if (rootResult.isSuccess) {
@@ -340,7 +345,9 @@ export function RemoteDirectoryBrowser({
       const result = await readRemoteDirectory(
         config,
         dirPath,
-        host?.identityFile
+        host?.identityFile,
+        false, // not recursive
+        rootPath // Pass the rootPath parameter
       );
 
       if (result.isSuccess) {

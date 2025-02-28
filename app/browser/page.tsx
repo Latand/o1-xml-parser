@@ -1,7 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { downloadSelectedFiles } from "@/actions/file-actions";
+import {
+  downloadSelectedFiles,
+  downloadRemoteSelectedFiles,
+} from "@/actions/file-actions";
 import { DirectoryBrowser } from "./_components/directory-browser";
 import { RemoteDirectoryBrowser } from "./_components/remote-directory-browser";
 import { FileStats } from "./_components/file-stats";
@@ -9,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
+import { Loader2 } from "lucide-react";
 
 interface SSHConfig {
   host: string;
@@ -25,6 +29,8 @@ export default function BrowserPage() {
   const [taskPrompt, setTaskPrompt] = useState<string>("");
   const [activeTab, setActiveTab] = useState<"local" | "remote">("local");
   const [sshConfig, setSSHConfig] = useState<SSHConfig | null>(null);
+  const [isCopying, setIsCopying] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   const handleCopy = async () => {
     if (selectedFiles.length === 0) {
@@ -32,20 +38,40 @@ export default function BrowserPage() {
       return;
     }
 
-    const result = await downloadSelectedFiles(selectedFiles, rootDir);
+    setIsCopying(true);
+    toast.info(`Processing ${selectedFiles.length} files...`);
 
-    if (result.isSuccess) {
-      try {
-        const content =
-          result.data.content +
-          (taskPrompt ? `\n\n## Tasks\n${taskPrompt}` : "");
-        await navigator.clipboard.writeText(content);
-        toast.success("Files copied to clipboard");
-      } catch (error) {
-        toast.error("Failed to copy to clipboard");
+    try {
+      let result;
+      if (activeTab === "remote" && sshConfig) {
+        result = await downloadRemoteSelectedFiles(
+          selectedFiles,
+          sshConfig,
+          rootDir
+        );
+      } else {
+        result = await downloadSelectedFiles(selectedFiles, rootDir);
       }
-    } else {
-      toast.error(result.message);
+
+      if (result.isSuccess) {
+        try {
+          const content =
+            result.data.content +
+            (taskPrompt ? `\n\n## Tasks\n${taskPrompt}` : "");
+          await navigator.clipboard.writeText(content);
+          toast.success("Files copied to clipboard");
+        } catch (error) {
+          toast.error("Failed to copy to clipboard");
+        }
+      } else {
+        toast.error(result.message);
+      }
+    } catch (error) {
+      toast.error(
+        `Error: ${error instanceof Error ? error.message : String(error)}`
+      );
+    } finally {
+      setIsCopying(false);
     }
   };
 
@@ -55,32 +81,53 @@ export default function BrowserPage() {
       return;
     }
 
-    const result = await downloadSelectedFiles(selectedFiles, rootDir);
+    setIsDownloading(true);
+    toast.info(`Processing ${selectedFiles.length} files...`);
 
-    if (result.isSuccess) {
-      const content =
-        result.data.content + (taskPrompt ? `\n\n## Tasks\n${taskPrompt}` : "");
-      // Download file
-      const blob = new Blob([content], { type: "text/plain" });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = result.data.filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-
-      // Copy to clipboard
-      try {
-        await navigator.clipboard.writeText(content);
-        toast.success("Files downloaded and copied to clipboard");
-      } catch (error) {
-        toast.success("Files downloaded");
-        toast.error("Failed to copy to clipboard");
+    try {
+      let result;
+      if (activeTab === "remote" && sshConfig) {
+        result = await downloadRemoteSelectedFiles(
+          selectedFiles,
+          sshConfig,
+          rootDir
+        );
+      } else {
+        result = await downloadSelectedFiles(selectedFiles, rootDir);
       }
-    } else {
-      toast.error(result.message);
+
+      if (result.isSuccess) {
+        const content =
+          result.data.content +
+          (taskPrompt ? `\n\n## Tasks\n${taskPrompt}` : "");
+        // Download file
+        const blob = new Blob([content], { type: "text/plain" });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = result.data.filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+
+        // Copy to clipboard
+        try {
+          await navigator.clipboard.writeText(content);
+          toast.success("Files downloaded and copied to clipboard");
+        } catch (error) {
+          toast.success("Files downloaded");
+          toast.error("Failed to copy to clipboard");
+        }
+      } else {
+        toast.error(result.message);
+      }
+    } catch (error) {
+      toast.error(
+        `Error: ${error instanceof Error ? error.message : String(error)}`
+      );
+    } finally {
+      setIsDownloading(false);
     }
   };
 
@@ -148,15 +195,29 @@ export default function BrowserPage() {
           <Button
             variant="outline"
             onClick={handleCopy}
-            disabled={selectedFiles.length === 0}
+            disabled={selectedFiles.length === 0 || isCopying}
           >
-            Copy Selected
+            {isCopying ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Copying...
+              </>
+            ) : (
+              "Copy Selected"
+            )}
           </Button>
           <Button
             onClick={handleDownload}
-            disabled={selectedFiles.length === 0}
+            disabled={selectedFiles.length === 0 || isDownloading}
           >
-            Download Selected
+            {isDownloading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Downloading...
+              </>
+            ) : (
+              "Download Selected"
+            )}
           </Button>
         </div>
       </div>

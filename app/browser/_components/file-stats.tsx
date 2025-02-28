@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { getFileStats } from "@/actions/file-actions";
-import { getRemoteFileStats } from "@/actions/ssh-actions";
-import { X, Loader2 } from "lucide-react";
+import { useCachedFileStats } from "@/lib/hooks";
+import { X, Loader2, RefreshCw, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { motion, AnimatePresence } from "framer-motion";
+import { SSHConfig } from "@/types";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 
 interface FileStatsProps {
@@ -12,25 +13,7 @@ interface FileStatsProps {
   onRemoveFile: (file: string) => void;
   rootDir?: string | null;
   isRemote?: boolean;
-  sshConfig?: {
-    host: string;
-    port: number;
-    username: string;
-    password?: string;
-    passphrase?: string;
-    identityFile?: string;
-  } | null;
-}
-
-interface FileStats {
-  lines: number;
-  characters: number;
-  tokens: number;
-  files: number;
-  fileStats: Array<{
-    path: string;
-    characters: number;
-  }>;
+  sshConfig?: SSHConfig | null;
 }
 
 export function FileStats({
@@ -40,46 +23,39 @@ export function FileStats({
   isRemote,
   sshConfig,
 }: FileStatsProps) {
-  const [stats, setStats] = useState<FileStats | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const { stats, isLoading, refreshStats } = useCachedFileStats(
+    selectedFiles,
+    rootDir,
+    isRemote,
+    sshConfig
+  );
+  const [error, setError] = useState<string | null>(null);
 
+  // Clear error when selection changes
   useEffect(() => {
-    if (selectedFiles.length === 0) {
-      setStats(null);
-      return;
-    }
+    setError(null);
+  }, [selectedFiles, isRemote, sshConfig]);
 
-    const loadStats = async () => {
-      setIsLoading(true);
-      try {
-        if (isRemote && sshConfig) {
-          const result = await getRemoteFileStats(
-            sshConfig,
-            selectedFiles,
-            sshConfig.identityFile
-          );
-          if (result.isSuccess) {
-            setStats(result.data);
-          } else {
-            toast.error(result.message);
-          }
-        } else {
-          const result = await getFileStats(selectedFiles, rootDir);
-          if (result.isSuccess) {
-            setStats(result.data);
-          } else {
-            toast.error(result.message);
-          }
-        }
-      } catch (error) {
-        toast.error("Failed to load file stats");
-      } finally {
-        setIsLoading(false);
+  const handleRefresh = async () => {
+    try {
+      setError(null);
+      await refreshStats();
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      if (
+        errorMessage.includes("Failed to initialize SFTP") ||
+        errorMessage.includes("Channel open failure")
+      ) {
+        setError(
+          "SFTP connection failed. This could be due to server restrictions or network issues. Try reconnecting or using a different SSH server."
+        );
+        toast.error("SFTP connection failed");
+      } else {
+        setError(`Error refreshing stats: ${errorMessage}`);
+        toast.error("Failed to refresh stats");
       }
-    };
-
-    loadStats();
-  }, [selectedFiles, rootDir, isRemote, sshConfig]);
+    }
+  };
 
   const formatNumber = (num: number) => {
     return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
@@ -100,7 +76,25 @@ export function FileStats({
 
   return (
     <div className="border border-gray-800 rounded-lg p-4 bg-gray-900/50 flex flex-col gap-4">
-      <h2 className="text-lg font-semibold">Selection Stats</h2>
+      <div className="flex justify-between items-center">
+        <h2 className="text-lg font-semibold">Selection Stats</h2>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleRefresh}
+          disabled={isLoading}
+          title="Refresh stats"
+        >
+          <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
+        </Button>
+      </div>
+
+      {error && (
+        <div className="bg-red-900/20 border border-red-800 rounded-lg p-3 text-sm flex items-start gap-2">
+          <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+          <div className="text-red-200">{error}</div>
+        </div>
+      )}
 
       {isLoading ? (
         <div className="flex items-center justify-center py-4">
@@ -109,33 +103,58 @@ export function FileStats({
       ) : stats ? (
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-2">
-            <div className="border border-gray-800 rounded p-2 bg-gray-900/50">
+            <motion.div
+              className="border border-gray-800 rounded p-2 bg-gray-900/50"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.2 }}
+            >
               <div className="text-xs text-gray-400">Files</div>
               <div className="text-lg font-medium">
                 {formatNumber(stats.files)}
               </div>
-            </div>
-            <div className="border border-gray-800 rounded p-2 bg-gray-900/50">
+            </motion.div>
+            <motion.div
+              className="border border-gray-800 rounded p-2 bg-gray-900/50"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.2, delay: 0.05 }}
+            >
               <div className="text-xs text-gray-400">Lines</div>
               <div className="text-lg font-medium">
                 {formatNumber(stats.lines)}
               </div>
-            </div>
-            <div className="border border-gray-800 rounded p-2 bg-gray-900/50">
+            </motion.div>
+            <motion.div
+              className="border border-gray-800 rounded p-2 bg-gray-900/50"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.2, delay: 0.1 }}
+            >
               <div className="text-xs text-gray-400">Characters</div>
               <div className="text-lg font-medium">
                 {formatNumber(stats.characters)}
               </div>
-            </div>
-            <div className="border border-gray-800 rounded p-2 bg-gray-900/50">
+            </motion.div>
+            <motion.div
+              className="border border-gray-800 rounded p-2 bg-gray-900/50"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.2, delay: 0.15 }}
+            >
               <div className="text-xs text-gray-400">Tokens</div>
               <div className="text-lg font-medium">
                 {formatNumber(stats.tokens)}
               </div>
-            </div>
+            </motion.div>
           </div>
 
-          <div className="border border-gray-800 rounded-lg p-3 bg-gray-900/50 space-y-2">
+          <motion.div
+            className="border border-gray-800 rounded-lg p-3 bg-gray-900/50 space-y-2"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2, delay: 0.2 }}
+          >
             <div className="flex justify-between items-center text-sm">
               <span className="text-gray-400">Selected files:</span>
               <span className="font-medium">
@@ -156,37 +175,43 @@ export function FileStats({
               <span className="text-gray-400">Total tokens:</span>
               <span className="font-medium">{formatNumber(stats.tokens)}</span>
             </div>
-          </div>
+          </motion.div>
         </div>
       ) : null}
 
       <div className="border-t border-gray-800 pt-4">
         <div className="text-base font-medium pb-2">Selected paths:</div>
         <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2">
-          {stats?.fileStats.map(({ path: file, characters }) => (
-            <div
-              key={file}
-              className="flex items-center gap-2 group hover:bg-gray-800/50 rounded p-2"
-            >
-              <div
-                className="text-base text-gray-100 break-all flex-1 leading-relaxed"
-                title={file}
+          <AnimatePresence>
+            {stats?.fileStats.map(({ path: file, characters }) => (
+              <motion.div
+                key={file}
+                className="flex items-center gap-2 group hover:bg-gray-800/50 rounded p-2"
+                initial={{ opacity: 0, height: 0, marginTop: 0 }}
+                animate={{ opacity: 1, height: "auto", marginTop: 8 }}
+                exit={{ opacity: 0, height: 0, marginTop: 0 }}
+                transition={{ duration: 0.2 }}
               >
-                {file}
-                <span className="text-gray-400 ml-2">
-                  ({formatKiloChars(characters)})
-                </span>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                onClick={() => onRemoveFile(file)}
-              >
-                <X className="w-4 h-4" />
-              </Button>
-            </div>
-          ))}
+                <div
+                  className="text-base text-gray-100 break-all flex-1 leading-relaxed"
+                  title={file}
+                >
+                  {file}
+                  <span className="text-gray-400 ml-2">
+                    ({formatKiloChars(characters)})
+                  </span>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                  onClick={() => onRemoveFile(file)}
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </motion.div>
+            ))}
+          </AnimatePresence>
         </div>
       </div>
     </div>
